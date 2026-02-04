@@ -291,78 +291,112 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderJpegImage(dataSet, byteArray, pixelDataElement, canvas) {
         try {
             // Encapsulated Format 파싱
-            // Pixel Data Element Value의 시작점부터 시작
             let offset = pixelDataElement.dataOffset;
             const endOffset = offset + pixelDataElement.length;
 
-            // 첫 번째 Item 읽기 (Basic Offset Table - 보통 비어있음)
-            // Item Tag: (FF FE E0 00)
-            const itemTag1 = dataSet.uint16('x00000000'); // Dummy read to access logic? No, accessing byteArray directly.
+            let fragments = [];
+            let isStandardEncapsulation = false;
 
-            // Helper to read simple values
-            function readUint16(off) {
-                return byteArray[off] + (byteArray[off + 1] << 8);
-            }
-            function readUint32(off) {
-                return byteArray[off] + (byteArray[off + 1] << 8) + (byteArray[off + 2] << 16) + (byteArray[off + 3] << 24);
-            }
-
-            // 1. Basic Offset Table Item
-            let currentOffset = offset;
-            let tag = readUint16(currentOffset);    // E000
-            let group = readUint16(currentOffset + 2); // FFFE
-            let length = readUint32(currentOffset + 4);
-
-            if (tag !== 0xE000 || group !== 0xFFFE) {
-                throw new Error('Encapsulated Data 시작 부분에서 Item Tag를 찾을 수 없습니다.');
-            }
-
-            // Offset Table 건너뛰기
-            currentOffset += 8 + length;
-
-            // 2. 첫 번째 Fragment (실제 이미지 데이터)
-            // 여러 Fragment로 나뉘어 있을 수 있으나, 보통 첫 프레임은 첫 번째 데이터 Fragment에 시작됨.
-            const fragments = [];
-
-            while (currentOffset < endOffset) {
-                tag = readUint16(currentOffset);
-                group = readUint16(currentOffset + 2);
-                length = readUint32(currentOffset + 4);
-
-                // Sequence Delimitation Item (FFFE E0DD)
-                if (tag === 0xE0DD && group === 0xFFFE) {
-                    break;
+            try {
+                // Helper to read simple values
+                function readUint16(off) {
+                    return byteArray[off] + (byteArray[off + 1] << 8);
+                }
+                function readUint32(off) {
+                    return byteArray[off] + (byteArray[off + 1] << 8) + (byteArray[off + 2] << 16) + (byteArray[off + 3] << 24);
                 }
 
-                if (tag === 0xE000 && group === 0xFFFE) {
-                    // Fragment 데이터 추출
-                    const fragmentData = byteArray.slice(currentOffset + 8, currentOffset + 8 + length);
-                    fragments.push(fragmentData);
+                // 1. Basic Offset Table Item Check
+                let currentOffset = offset;
 
-                    // 다음 Item으로 이동
-                    currentOffset += 8 + length;
+                // 범위 체크
+                if (currentOffset + 8 <= endOffset) {
+                    let tag = readUint16(currentOffset);    // E000
+                    let group = readUint16(currentOffset + 2); // FFFE
 
-                    // 간단한 구현: 첫 번째 Fragment만 처리하거나, SOI(FF D8)를 찾아서 처리
-                    // JPEG 이미지는 보통 하나의 Fragment에 통째로 들어가거나, 여러개로 쪼개짐.
-                    // 첫 번째 Fragment에 SOI 마커가 있으면 이것을 사용 시도.
-                    if (fragmentData.length > 2 && fragmentData[0] === 0xFF && fragmentData[1] === 0xD8) {
-                        // Found JPEG SOI
-                        break; // 일단 첫 번째 프레임만 그리기 위해 루프 종료
+                    if (tag === 0xE000 && group === 0xFFFE) {
+                        // 표준 구조로 보임
+                        isStandardEncapsulation = true;
+                        let length = readUint32(currentOffset + 4);
+                        currentOffset += 8 + length; // Offset Table 건너뛰기
+
+                        // Fragment Loop
+                        while (currentOffset < endOffset) {
+                            if (currentOffset + 8 > endOffset) break; // 안전 장치
+
+                            tag = readUint16(currentOffset);
+                            group = readUint16(currentOffset + 2);
+                            length = readUint32(currentOffset + 4);
+
+                            // Sequence Delimitation Item (FFFE E0DD)
+                            if (tag === 0xE0DD && group === 0xFFFE) {
+                                break;
+                            }
+
+                            if (tag === 0xE000 && group === 0xFFFE) {
+                                if (currentOffset + 8 + length > endOffset) {
+                                    // 데이터 잘림 방지
+                                    length = endOffset - (currentOffset + 8);
+                                }
+
+                                const fragmentData = byteArray.slice(currentOffset + 8, currentOffset + 8 + length);
+                                fragments.push(fragmentData);
+                                currentOffset += 8 + length;
+
+                                if (fragmentData.length > 2 && fragmentData[0] === 0xFF && fragmentData[1] === 0xD8) {
+                                    break; // 첫 번째 프레임 발견 시 중단 (단순화)
+                                }
+                            } else {
+                                // 알 수 없는 태그 -> 구조 깨짐으로 간주
+                                console.warn('Unknown Tag in Encapsulated Data:', group.toString(16), tag.toString(16));
+                                isStandardEncapsulation = false; // Fallback으로 전환
+                                fragments = [];
+                                break;
+                            }
+                        }
                     }
-                } else {
-                    console.warn('Unknown Tag in Encapsulated Data:', group.toString(16), tag.toString(16));
-                    break;
+                }
+            } catch (parseErr) {
+                console.warn('Standard parsing failed:', parseErr);
+                isStandardEncapsulation = false;
+                fragments = [];
+            }
+
+            // 2. Fallback: Raw Byte Scanning
+            // 표준 구조 파싱에 실패했거나, 결과가 없을 경우
+            if (!isStandardEncapsulation || fragments.length === 0) {
+                console.log('Falling back to Raw Byte Scanning for JPEG SOI...');
+
+                // Pixel Data 영역 내에서 JPEG SOI (FF D8) 검색
+                let scanIndex = offset;
+                let foundSoi = -1;
+
+                // 너무 오래 걸리지 않게 앞부분 4KB 정도만 검색하거나, 그냥 전체 검색 (이미지 크기에 따라 다름)
+                while (scanIndex < endOffset - 1) {
+                    if (byteArray[scanIndex] === 0xFF && byteArray[scanIndex + 1] === 0xD8) {
+                        foundSoi = scanIndex;
+                        break;
+                    }
+                    scanIndex++;
+                }
+
+                if (foundSoi !== -1) {
+                    // 발견된 SOI 부터 Pixel Data 끝까지를 Blob으로 간주
+                    // (뒤에 패딩이나 다른 프레임이 있어도 브라우저 디코더가 무시하길 기대)
+                    // 일부 브라우저는 뒤에 쓰레기 값이 많으면 에러를 낼 수도 있으므로, EOI(FF D9)를 찾는 것이 좋으나
+                    // EOI가 여러개일 수도 있고 썸네일일 수도 있어 일단 전체를 넘김
+                    const jpegData = byteArray.slice(foundSoi, endOffset);
+                    fragments.push(jpegData);
+                    const info = document.getElementById('imageInfo');
+                    if (info) info.textContent += ' (Recovered)';
                 }
             }
 
             if (fragments.length === 0) {
-                throw new Error('JPEG 데이터를 찾을 수 없습니다.');
+                throw new Error('JPEG 데이터를 찾을 수 없습니다 (No SOI found).');
             }
 
-            // 추출한 데이터로 Blob 생성
-            // 만약 이미지가 여러 Fragment에 나뉘어 있다면 합쳐야 할 수도 있지만, 
-            // DICOM 표준상 Frame 하나는 하나의 Fragment 또는 여러 Fragment에 걸칠 수 있음.
-            // 여기서는 가장 단순한 Case (First Fragment contains the image) 우선 대응
+            // 렌더링
             const blob = new Blob([fragments[0]], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
 
@@ -373,11 +407,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                URL.revokeObjectURL(url); // 메모리 해제
-                document.getElementById('imageInfo').textContent = `${img.width}x${img.height}, JPEG (Browser Decoded)`;
+                URL.revokeObjectURL(url);
+                const info = document.getElementById('imageInfo');
+                if (info && !info.textContent.includes('JPEG')) {
+                    const transferSyntax = dataSet.string('x00020010');
+                    info.textContent = `${img.width}x${img.height}, JPEG (Browser Decoded), TS: ${transferSyntax}`;
+                }
             };
             img.onerror = function () {
-                document.getElementById('imageInfo').textContent = '브라우저에서 이미지 디코딩 실패';
+                document.getElementById('imageInfo').textContent = '브라우저에서 이미지 디코딩 실패 (Invalid Stream)';
             };
             img.src = url;
 
