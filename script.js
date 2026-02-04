@@ -13,37 +13,62 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', handleFileSelect);
     tagSearchInput.addEventListener('input', handleSearch);
 
+    // 기본 파일 자동 로드
+    loadDefaultFile();
+
+    function loadDefaultFile() {
+        const defaultFileName = 'IMG-0002-00001.dcm';
+        fetch(defaultFileName)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.arrayBuffer();
+            })
+            .then(arrayBuffer => {
+                const byteArray = new Uint8Array(arrayBuffer);
+                processDicomData(byteArray, defaultFileName);
+            })
+            .catch(e => {
+                console.warn('기본 파일 로드 실패:', e);
+                // 실패해도 사용자에게 굳이 알리지 않거나, console 로그만 남김 (파일이 없을 수도 있으므로)
+            });
+    }
+
     function handleFileSelect(event) {
         const file = event.target.files[0];
         if (!file) return;
-
-        fileNameDisplay.textContent = file.name;
 
         const reader = new FileReader();
         reader.onload = (fileEvent) => {
             const arrayBuffer = fileEvent.target.result;
             const byteArray = new Uint8Array(arrayBuffer);
-
-            try {
-                // DICOM 파싱
-                parsedDicom = dicomParser.parseDicom(byteArray);
-
-                // UI 초기화 및 표시
-                previewSection.classList.remove('hidden');
-                dataSection.classList.remove('hidden');
-
-                // 데이터 테이블 렌더링
-                renderTable(parsedDicom, byteArray);
-
-                // 이미지 렌더링 시도
-                renderImage(parsedDicom, byteArray);
-
-            } catch (error) {
-                console.error('Error parsing DICOM:', error);
-                alert('DICOM 파싱 중 오류가 발생했습니다. 올바른 DICOM 파일인지 확인해주세요.');
-            }
+            processDicomData(byteArray, file.name);
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    function processDicomData(byteArray, fileName) {
+        fileNameDisplay.textContent = fileName;
+
+        try {
+            // DICOM 파싱
+            parsedDicom = dicomParser.parseDicom(byteArray);
+
+            // UI 초기화 및 표시
+            previewSection.classList.remove('hidden');
+            dataSection.classList.remove('hidden');
+
+            // 데이터 테이블 렌더링
+            renderTable(parsedDicom, byteArray);
+
+            // 이미지 렌더링 시도
+            renderImage(parsedDicom, byteArray);
+
+        } catch (error) {
+            console.error('Error parsing DICOM:', error);
+            alert('DICOM 파싱 중 오류가 발생했습니다. 올바른 DICOM 파일인지 확인해주세요.');
+        }
     }
 
     function renderTable(dataSet, byteArray) {

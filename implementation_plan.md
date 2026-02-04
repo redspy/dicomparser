@@ -19,6 +19,7 @@ HTML5, CSS, JavaScript를 사용하여 DICOM 파일을 열고, 포함된 모든 
     - 원본 픽셀 데이터 저장.
     - Windowing 적용 로직 (VOI LUT - Linear Function) 구현.
     - 슬라이더 이벤트 핸들러 추가하여 실시간 밝기/대비 조절.
+- **[NEW] 자동 로드**: `DOMContentLoaded` 시 `IMG-0002-00001.dcm` 파일을 fetch하여 초기 화면에 표시.
 
 ### [Frontend]
 #### [NEW] [index.html](file:///Users/soul/Source/dicomparser/index.html)
