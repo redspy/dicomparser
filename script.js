@@ -31,7 +31,12 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .catch(e => {
                 console.warn('기본 파일 로드 실패:', e);
-                // 실패해도 사용자에게 굳이 알리지 않거나, console 로그만 남김 (파일이 없을 수도 있으므로)
+                // 로컬 실행(file://) 환경에서는 CORS 이슈로 fetch가 차단될 수 있음을 안내
+                if (window.location.protocol === 'file:') {
+                    alert('로컬 파일 실행(file://) 환경에서는 브라우저 보안 정책으로 인해 기본 파일을 자동으로 불러올 수 없습니다.\n\n파일을 직접 선택하거나, 로컬 웹 서버(예: python -m http.server)를 사용하여 실행해주세요.');
+                } else {
+                    console.error('기본 파일을 불러오는 중 오류가 발생했습니다. 파일이 존재하는지 확인해주세요.');
+                }
             });
     }
 
