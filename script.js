@@ -169,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         return dictionary[tag.toLowerCase()];
     }
-
     function renderImage(dataSet, byteArray) {
         // 이미지를 그리기 위해 필요한 최소한의 정보 확인
         try {
@@ -183,103 +182,166 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const transferSyntax = dataSet.string('x00020010');
-            // 압축된 이미지는 dicom-parser만으로 디코딩 불가 (별도 코덱 필요)
-            // 여기서는 Uncompressed Little Endian (1.2.840.10008.1.2.1) 등만 기본 지원 시도
-            // 사용자 요청: "해석이 가능한 이미지 데이터가 존재한다면... Preview를... 보여줘"
 
-            // 간단하게 지원되는 Transfer Syntax인지 확인 (Explicit VR Little Endian, Implicit VR Little Endian)
+            // 압축된 형식 처리
             const supportedSyntaxes = [
                 '1.2.840.10008.1.2',      // Implicit VR Little Endian
                 '1.2.840.10008.1.2.1',    // Explicit VR Little Endian
             ];
 
+            const jpegSyntaxes = [
+                '1.2.840.10008.1.2.4.50',
+                '1.2.840.10008.1.2.4.51',
+                '1.2.840.10008.1.2.4.70',
+            ];
+
             if (transferSyntax && !supportedSyntaxes.includes(transferSyntax)) {
-                // JPEG Baseline (1.2.840.10008.1.2.4.50) 및 호환 가능한 포맷 지원 시도
-                const jpegSyntaxes = [
-                    '1.2.840.10008.1.2.4.50', // JPEG Baseline
-                    '1.2.840.10008.1.2.4.51', // JPEG Extended (Process 2 & 4)
-                    '1.2.840.10008.1.2.4.70', // JPEG Lossless (Selection Value 1)
-                ];
-
                 if (jpegSyntaxes.includes(transferSyntax)) {
+                    document.getElementById('windowControls').classList.add('hidden');
                     renderJpegImage(dataSet, byteArray, pixelDataElement, canvas);
-                    return;
+                } else {
+                    document.getElementById('imageInfo').textContent = `미리보기 불가: 지원되지 않는 전송 문법입니다 (${transferSyntax}).`;
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
                 }
-
-                document.getElementById('imageInfo').textContent = `미리보기 불가: 지원되지 않는 전송 문법입니다 (${transferSyntax}). 압축된 이미지일 수 있습니다.`;
-                // 캔버스 초기화
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 return;
             }
+
+            // Uncompressed Image Logic
+            document.getElementById('windowControls').classList.remove('hidden');
 
             canvas.width = columns;
             canvas.height = rows;
             const ctx = canvas.getContext('2d');
             const imageData = ctx.createImageData(columns, rows);
 
-            // Pixel Data 추출 (기본적인 Grayscale 8/16bit 처리)
-            // 실제로는 BitsAllocated, BitsStored, PixelRepresentation, RescaleSlope/Intercept 등을 고려해야 함
-            // 여기서는 단순히 0~255 범위로 정규화하여 표시하는 간단한 로직 구현
-
             const pixelDataOffset = pixelDataElement.dataOffset;
-            const pixelDataLength = pixelDataElement.length;
             const bitsAllocated = dataSet.uint16('x00280100');
+            const pixelRepresentation = dataSet.uint16('x00280103'); // 0=unsigned, 1=signed
+            const rescaleSlope = dataSet.floatString('x00281053') || 1.0;
+            const rescaleIntercept = dataSet.floatString('x00281052') || 0.0;
 
+            // Raw Pixel Data Loading
             let numPixels = rows * columns;
-            // 안전 장치
-            if (pixelDataLength < numPixels * (bitsAllocated / 8)) {
-                console.warn('Pixel Data length is smaller than expected.');
-            }
-
-            // Window Level/Width 적용을 위한 값 (없으면 전체 범위 사용)
-            // 간단한 구현을 위해 Min/Max Scaling 사용
-
-            let minVal = Number.MAX_VALUE;
-            let maxVal = Number.MIN_VALUE;
             let pixels = null;
 
             if (bitsAllocated === 8) {
                 pixels = new Uint8Array(byteArray.buffer, pixelDataOffset, numPixels);
             } else if (bitsAllocated === 16) {
-                pixels = new Int16Array(byteArray.buffer, pixelDataOffset, numPixels);
-                // Note: Int16 vs Uint16 depends on PixelRepresentation (0=unsigned, 1=signed)
-                const pixelRepresentation = dataSet.uint16('x00280103');
-                if (pixelRepresentation === 0) {
+                if (pixelRepresentation === 1) {
+                    pixels = new Int16Array(byteArray.buffer, pixelDataOffset, numPixels);
+                } else {
                     pixels = new Uint16Array(byteArray.buffer, pixelDataOffset, numPixels);
                 }
             }
 
-            if (pixels) {
-                // 1. Min/Max 찾기
-                for (let i = 0; i < numPixels; i++) {
-                    if (pixels[i] < minVal) minVal = pixels[i];
-                    if (pixels[i] > maxVal) maxVal = pixels[i];
-                }
+            if (!pixels) {
+                document.getElementById('imageInfo').textContent = `지원되지 않는 bit depth (${bitsAllocated})`;
+                return;
+            }
 
-                // 2. 렌더링
-                const range = maxVal - minVal;
+            // --- Window Level Logic ---
+            const wcSlider = document.getElementById('wcSlider');
+            const wwSlider = document.getElementById('wwSlider');
+            const wcValue = document.getElementById('wcValue');
+            const wwValue = document.getElementById('wwValue');
+            const resetBtn = document.getElementById('resetWindowBtn');
+
+            // Initial Values (Try to get from tags)
+            let initialWC = 0;
+            let initialWW = 0;
+
+            // 안전하게 파싱 시도
+            try {
+                const wcStr = dataSet.string('x00281050');
+                const wwStr = dataSet.string('x00281051');
+                if (wcStr) initialWC = parseFloat(wcStr.split('\\')[0]);
+                if (wwStr) initialWW = parseFloat(wwStr.split('\\')[0]);
+            } catch (e) { }
+
+            // Calculate Range from Min/Max Pixel
+            let minPixel = Number.MAX_VALUE;
+            let maxPixel = Number.MIN_VALUE;
+
+            for (let i = 0; i < numPixels; i++) {
+                if (pixels[i] < minPixel) minPixel = pixels[i];
+                if (pixels[i] > maxPixel) maxPixel = pixels[i];
+            }
+
+            const minHU = minPixel * rescaleSlope + rescaleIntercept;
+            const maxHU = maxPixel * rescaleSlope + rescaleIntercept;
+
+            if (!initialWW || initialWW <= 0) {
+                initialWW = maxHU - minHU; // Full Range
+            }
+            if (isNaN(initialWC)) {
+                initialWC = (maxHU + minHU) / 2; // Middle
+            }
+
+            // Set Ranges
+            wcSlider.min = Math.floor(minHU - 1000);
+            wcSlider.max = Math.floor(maxHU + 1000);
+            wwSlider.min = 1;
+            wwSlider.max = Math.floor((maxHU - minHU) * 2) || 4000;
+
+            // Apply Values
+            updateGUI(initialWC, initialWW);
+            drawWindowedImage(initialWC, initialWW);
+
+            // Events
+            wcSlider.oninput = (e) => {
+                const val = parseFloat(e.target.value);
+                wcValue.textContent = Math.round(val);
+                drawWindowedImage(val, parseFloat(wwSlider.value));
+            };
+
+            wwSlider.oninput = (e) => {
+                const val = parseFloat(e.target.value);
+                wwValue.textContent = Math.round(val);
+                drawWindowedImage(parseFloat(wcSlider.value), val);
+            };
+
+            resetBtn.onclick = () => {
+                updateGUI(initialWC, initialWW);
+                drawWindowedImage(initialWC, initialWW);
+            };
+
+            function updateGUI(c, w) {
+                wcSlider.value = c;
+                wwSlider.value = w;
+                wcValue.textContent = Math.round(c);
+                wwValue.textContent = Math.round(w);
+            }
+
+            function drawWindowedImage(wc, ww) {
+                const wc_val = wc;
+                const ww_val = ww;
+
+                const minWindow = wc_val - 0.5 * ww_val;
+                const maxWindow = wc_val + 0.5 * ww_val;
+                const windowRange = maxWindow - minWindow;
+
                 let dataIndex = 0;
                 for (let i = 0; i < numPixels; i++) {
-                    let pixelValue = pixels[i];
-                    // Normalize to 0-255
+                    let rawValue = pixels[i];
+                    let huValue = rawValue * rescaleSlope + rescaleIntercept;
+
                     let val = 0;
-                    if (range > 0) {
-                        val = Math.floor(((pixelValue - minVal) / range) * 255);
-                    } else {
+                    if (huValue <= minWindow) {
                         val = 0;
+                    } else if (huValue >= maxWindow) {
+                        val = 255;
+                    } else {
+                        val = Math.floor(((huValue - minWindow) / windowRange) * 255);
                     }
 
-                    // Grayscale
                     imageData.data[dataIndex++] = val; // R
                     imageData.data[dataIndex++] = val; // G
                     imageData.data[dataIndex++] = val; // B
                     imageData.data[dataIndex++] = 255; // Alpha
                 }
                 ctx.putImageData(imageData, 0, 0);
-                document.getElementById('imageInfo').textContent = `${columns}x${rows}, ${bitsAllocated} bit, ${transferSyntax || 'Implicit Little Endian'}`;
-            } else {
-                document.getElementById('imageInfo').textContent = `미리보기 불가: 지원되지 않는 bit depth (${bitsAllocated})`;
+                document.getElementById('imageInfo').textContent = `${columns}x${rows}, ${bitsAllocated} bit, WC: ${Math.round(wc_val)}, WW: ${Math.round(ww_val)}`;
             }
 
         } catch (e) {
@@ -287,7 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('imageInfo').textContent = '이미지 렌더링 중 오류 발생';
         }
     }
-
     function renderJpegImage(dataSet, byteArray, pixelDataElement, canvas) {
         try {
             // Encapsulated Format 파싱

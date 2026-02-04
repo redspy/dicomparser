@@ -10,7 +10,15 @@ HTML5, CSS, JavaScript를 사용하여 DICOM 파일을 열고, 포함된 모든 
 
 ### 기본 구조
 - **JavaScript**:
-    - `script.js`: `renderImage` 함수 강화. JPEG Transfer Syntax 감지 시 Encapsulated Pixel Data에서 JPEG 스트림을 추출하여 Blob으로 변환 후 렌더링하는 로직 추가.
+### [Frontend]
+#### [Modify] [index.html](file:///Users/soul/Source/dicomparser/index.html)
+- Window Center(Level) / Window Width 조절을 위한 슬라이더 UI 추가.
+
+#### [Modify] [script.js](file:///Users/soul/Source/dicomparser/script.js)
+- `renderImage` 함수 강화:
+    - 원본 픽셀 데이터 저장.
+    - Windowing 적용 로직 (VOI LUT - Linear Function) 구현.
+    - 슬라이더 이벤트 핸들러 추가하여 실시간 밝기/대비 조절.
 
 ### [Frontend]
 #### [NEW] [index.html](file:///Users/soul/Source/dicomparser/index.html)
