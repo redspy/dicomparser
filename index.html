@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DICOM 뷰어</title>
+    <!-- Google Fonts for Premium Look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>DICOM Viewer</h1>
+            <p>Medical Image & Data Inspector</p>
+        </header>
+        
+        <div class="control-panel">
+            <label for="dicomFile" class="file-upload-btn">
+                <span>📁 DICOM 파일 열기</span>
+                <input type="file" id="dicomFile" accept=".dcm,application/dicom">
+            </label>
+            <span id="fileName" class="file-name">선택된 파일 없음</span>
+        </div>
+
+        <main class="content-area">
+            <!-- Image Preview Section -->
+            <section id="previewSection" class="preview-section hidden">
+                <div class="section-header">
+                    <h2>이미지 미리보기</h2>
+                </div>
+                <div class="canvas-wrapper">
+                    <canvas id="dicomImage"></canvas>
+                    <div id="imageInfo" class="image-info"></div>
+                </div>
+            </section>
+
+            <!-- Data Table Section -->
+            <section id="dataSection" class="data-section hidden">
+                <div class="section-header">
+                    <h2>데이터 태그</h2>
+                    <div class="search-box">
+                        <input type="text" id="tagSearch" placeholder="태그 또는 설명 검색...">
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="dicomTable">
+                        <thead>
+                            <tr>
+                                <th>Tag</th>
+                                <th>Name (VR)</th>
+                                <th>Length</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by <a href="https://github.com/cornerstonejs/dicomParser" target="_blank">dicom-parser</a></p>
+        </footer>
+    </div>
+
+    <!-- dicom-parser Library -->
+    <script src="https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
