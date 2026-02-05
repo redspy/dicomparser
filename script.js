@@ -96,7 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
                     console.log('dcmjs parsing success');
                 } catch (dcmjsError) {
-                    console.warn('dcmjs parsing failed (Editing disabled):', dcmjsError);
+                    console.warn('dcmjs parsing failed:', dcmjsError);
+                    // loadedDicomData remains null
+                    // 사용자에게 파싱 실패 사실을 알리지는 않음 (뷰어는 정상이므로).
+                    // 단, 편집 시도 시 알림.
                 }
             } else {
                 console.warn('dcmjs library not found.');
@@ -600,6 +603,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Editing & Saving Features ---
 
     function makeCellEditable(cell, tagKey, vr) {
+        if (!loadedDicomData) {
+            alert('이 파일은 편집할 수 없습니다 (dcmjs 파싱 실패).');
+            return;
+        }
         if (cell.querySelector('input')) return; // Already editing
 
         const currentValue = cell.innerText;
@@ -671,6 +678,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addNewTag() {
+        if (!loadedDicomData || !loadedDicomData.dict) {
+            alert('편집 가능한 데이터가 없습니다. (dcmjs 파싱 실패: 파일이 손상되었거나 지원하지 않는 포맷일 수 있습니다.)');
+            return;
+        }
+
         const group = document.getElementById('tagGroup').value;
         const element = document.getElementById('tagElement').value;
         const vr = document.getElementById('tagVR').value;
