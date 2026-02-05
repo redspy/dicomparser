@@ -84,11 +84,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // 1. dicom-parser 파싱 (뷰어 및 기존 로직용)
+            // 이것이 실패하면 전체가 실패한 것으로 간주 (catch로 이동)
             parsedDicom = dicomParser.parseDicom(byteArray);
 
-            // 2. dcmjs 파싱 (편집 및 저장용)
-            // dcmjs는 ArrayBuffer를 입력으로 받습니다.
-            loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
+            // 2. dcmjs 파싱 (편집 및 저장용) - 선택적 기능
+            // dcmjs가 없거나 파싱에 실패해도 뷰어 기능은 유지
+            loadedDicomData = null;
+            if (typeof dcmjs !== 'undefined') {
+                try {
+                    // dcmjs는 ArrayBuffer를 입력으로 받습니다.
+                    loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
+                    console.log('dcmjs parsing success');
+                } catch (dcmjsError) {
+                    console.warn('dcmjs parsing failed (Editing disabled):', dcmjsError);
+                    // 편집 기능 비활성화를 사용자에게 알릴 수도 있음
+                }
+            } else {
+                console.warn('dcmjs library not found.');
+            }
 
             // UI 초기화 및 표시
             previewSection.classList.remove('hidden');
