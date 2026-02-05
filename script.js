@@ -93,18 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof dcmjs !== 'undefined') {
                 try {
                     // dcmjs는 ArrayBuffer를 입력으로 받습니다.
-                    loadedDicomData = null;
-                    if (typeof dcmjs !== 'undefined') {
-                        try {
-                            loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
-                        } catch (e) {
-                            console.warn('dcmjs parsing failed:', e);
-                        }
-                    }
+                    loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
                     console.log('dcmjs parsing success');
                 } catch (dcmjsError) {
                     console.warn('dcmjs parsing failed (Editing disabled):', dcmjsError);
-                    // 편집 기능 비활성화를 사용자에게 알릴 수도 있음
                 }
             } else {
                 console.warn('dcmjs library not found.');
