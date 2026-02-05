@@ -7,11 +7,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('dicomImage');
     const tagSearchInput = document.getElementById('tagSearch');
 
+    const addTagBtn = document.getElementById('addTagBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const addTagModal = document.getElementById('addTagModal');
+    const cancelTagBtn = document.getElementById('cancelTagBtn');
+    const saveTagBtn = document.getElementById('saveTagBtn');
+
     let parsedDicom = null;
+    let loadedDicomData = null; // dcmjs object
     let allTags = [];
 
     fileInput.addEventListener('change', handleFileSelect);
     tagSearchInput.addEventListener('input', handleSearch);
+
+    // UI Events
+    addTagBtn.addEventListener('click', () => {
+        addTagModal.classList.remove('hidden');
+    });
+
+    cancelTagBtn.addEventListener('click', () => {
+        addTagModal.classList.add('hidden');
+    });
+
+    saveTagBtn.addEventListener('click', addNewTag);
+    downloadBtn.addEventListener('click', downloadDicom);
+
+    // Close modal on outside click
+    addTagModal.addEventListener('click', (e) => {
+        if (e.target === addTagModal) {
+            addTagModal.classList.add('hidden');
+        }
+    });
 
     // 기본 파일 자동 로드
     loadDefaultFile();
@@ -57,8 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
         fileNameDisplay.textContent = fileName;
 
         try {
-            // DICOM 파싱
+            // 1. dicom-parser 파싱 (뷰어 및 기존 로직용)
             parsedDicom = dicomParser.parseDicom(byteArray);
+
+            // 2. dcmjs 파싱 (편집 및 저장용)
+            // dcmjs는 ArrayBuffer를 입력으로 받습니다.
+            loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
 
             // UI 초기화 및 표시
             previewSection.classList.remove('hidden');
@@ -72,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Error parsing DICOM:', error);
-            alert('DICOM 파싱 중 오류가 발생했습니다. 올바른 DICOM 파일인지 확인해주세요.');
+            alert('DICOM 파싱 중 오류가 발생했습니다. 올바른 DICOM 파일인지 확인해주세요.\n\n' + error.message);
         }
     }
 
@@ -137,14 +167,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
 
         // Tag format: x00280010 -> (0028,0010)
-        const formattedTag = `(${tag.substring(1, 5)},${tag.substring(5)})`.toUpperCase();
+        // dcmjs uses '00280010' (no 'x')
+        // We need a standard key for consistent editing
+        const tagKey = tag.startsWith('x') ? tag.substring(1) : tag;
+
+        const group = tagKey.substring(0, 4);
+        const element = tagKey.substring(4, 8);
+        const formattedTag = `(${group},${element})`.toUpperCase();
+
+        // Editable check: Only text based VRs are editable for now
+        const editableVRs = ['PN', 'LO', 'SH', 'DA', 'TM', 'CS', 'ST', 'LT', 'UT', 'AE', 'AS', 'DS', 'IS', 'UI'];
+        const isEditable = editableVRs.includes(vr);
+
+        const valueCell = document.createElement('td');
+        valueCell.className = isEditable ? 'editable-cell' : '';
+        valueCell.innerHTML = value; // innerHTML for safe content (already sanitized or mapped)
+
+        if (isEditable) {
+            valueCell.title = "Click to edit";
+            valueCell.style.cursor = "pointer";
+            valueCell.onclick = function () {
+                makeCellEditable(this, tagKey, vr);
+            };
+        }
 
         tr.innerHTML = `
             <td>${formattedTag}</td>
             <td>${name} <span style="font-size:0.8em; color:#666;">(${vr})</span></td>
             <td>${length}</td>
-            <td>${value}</td>
         `;
+        tr.appendChild(valueCell);
+
         return tr;
     }
 
@@ -530,5 +583,165 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = createTableRow(item.tag, item.name, item.vr, item.length, item.value);
             dicomTableBody.appendChild(tr);
         });
+    }
+
+    // --- Editing & Saving Features ---
+
+    function makeCellEditable(cell, tagKey, vr) {
+        if (cell.querySelector('input')) return; // Already editing
+
+        const currentValue = cell.innerText;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentValue;
+        input.className = 'edit-input';
+
+        // Save on Blur or Enter
+        const saveHandler = () => {
+            const newValue = input.value;
+            // Update UI
+            cell.innerText = newValue;
+            // Update Data
+            saveTagValue(tagKey, vr, newValue);
+        };
+
+        input.onblur = saveHandler;
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+        };
+
+        cell.innerHTML = '';
+        cell.appendChild(input);
+        input.focus();
+    }
+
+    function saveTagValue(tagKey, vr, newValue) {
+        // tagKey format: '00100010' (no 'x')
+        // dcmjs dict structure: dataset.dict['00100010'] = { vr: 'PN', Value: ['Name'] }
+
+        if (!loadedDicomData || !loadedDicomData.dict) return;
+
+        // Ensure key format matches dcmjs expectations
+        const key = tagKey.startsWith('x') ? tagKey.substring(1) : tagKey;
+
+        if (!loadedDicomData.dict[key]) {
+            // Create if not exists (shouldn't happen for edit, only add)
+            loadedDicomData.dict[key] = { vr: vr, Value: [] };
+        }
+
+        // dcmjs Value is usually an array
+        // Handle Multi-value VRs if needed, for now treat as single string
+        // Some VRs need specific parsing (e.g. DS, IS, FL) but string is robust for simple text
+        if (['DS', 'IS', 'US', 'SS', 'UL', 'SL', 'FL', 'FD'].includes(vr)) {
+            // Try number parsing
+            const num = Number(newValue);
+            loadedDicomData.dict[key].Value = [isNaN(num) ? newValue : num];
+        } else {
+            loadedDicomData.dict[key].Value = [newValue];
+        }
+
+        console.log(`Updated ${key} to ${newValue}`);
+
+        // Update allTags array for search consistency
+        const tagIndex = allTags.findIndex(t => t.tag === ('x' + key) || t.tag === key);
+        if (tagIndex !== -1) {
+            allTags[tagIndex].value = newValue;
+        }
+    }
+
+    function addNewTag() {
+        const group = document.getElementById('tagGroup').value;
+        const element = document.getElementById('tagElement').value;
+        const vr = document.getElementById('tagVR').value;
+        const value = document.getElementById('tagValue').value;
+
+        if (!group || !element || group.length !== 4 || element.length !== 4) {
+            alert('Group and Element must be 4-character Hex strings (e.g. 0010).');
+            return;
+        }
+
+        const tagKey = group + element;
+
+        if (loadedDicomData.dict[tagKey]) {
+            if (!confirm('Tag already exists. Overwrite?')) return;
+        }
+
+        // Add to dcmjs dict
+        loadedDicomData.dict[tagKey] = {
+            vr: vr,
+            Value: [value]
+        };
+
+        // Add to UI (Manual update or re-render)
+        // Re-rendering table is safer but heavier. Let's just append to table and allTags.
+
+        const name = getTagName('x' + tagKey) || 'Custom Tag';
+
+        // createTableRow expects 'x...' format usually for 'tag' arg if based on dicom-parser key
+        // passing raw hex key and handling it in createTableRow is safer now.
+        const tr = createTableRow(tagKey, name, vr, value.length, value);
+
+        // Prepend to body or append? Append.
+        // If sorting matters, we should re-render. Let's try re-rendering from updated dict if possible,
+        // but our renderTable depends on dicomParser dataSet, not dcmjs loadedDicomData.
+        // So we strictly manage UI element addition here manually to avoid full re-parse logic complexity.
+
+        dicomTableBody.insertBefore(tr, dicomTableBody.firstChild); // Show at top for visibility
+
+        // Update search cache
+        allTags.push({
+            tag: tagKey, // or 'x'+tagKey
+            name: name,
+            vr: vr,
+            length: value.length,
+            value: value
+        });
+
+        // Close Modal
+        document.getElementById('addTagModal').classList.add('hidden');
+
+        // Clear inputs
+        document.getElementById('tagGroup').value = '';
+        document.getElementById('tagElement').value = '';
+        document.getElementById('tagValue').value = '';
+
+        alert('Tag Added!');
+    }
+
+    function downloadDicom() {
+        if (!loadedDicomData) {
+            alert('No DICOM data loaded.');
+            return;
+        }
+
+        try {
+            // Write to ArrayBuffer
+            const buffer = loadedDicomData.write();
+
+            // Create Blob
+            const blob = new Blob([buffer], { type: 'application/dicom' });
+
+            // Create Link
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+
+            // File Name
+            const originalName = fileNameDisplay.textContent || 'image.dcm';
+            const dotIndex = originalName.lastIndexOf('.');
+            const baseName = dotIndex !== -1 ? originalName.substring(0, dotIndex) : originalName;
+            link.download = `${baseName}_modified.dcm`;
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+        } catch (e) {
+            console.error('Error generating DICOM:', e);
+            alert('Failed to generate DICOM file.\n' + e.message);
+        }
     }
 });

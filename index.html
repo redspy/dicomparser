@@ -59,6 +59,10 @@
                     <div class="search-box">
                         <input type="text" id="tagSearch" placeholder="태그 또는 설명 검색...">
                     </div>
+                    <div class="toolbar-actions">
+                        <button id="addTagBtn" class="btn-primary">Add Tag</button>
+                        <button id="downloadBtn" class="btn-secondary">Download DICOM</button>
+                    </div>
                 </div>
                 <div class="table-container">
                     <table id="dicomTable">
@@ -85,7 +89,57 @@
 
     <!-- dicom-parser Library -->
     <script src="https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js"></script>
+    <!-- dcmjs Library -->
+    <script src="https://unpkg.com/dcmjs@0.29.8/build/dcmjs.js"></script>
     <script src="script.js?v=2"></script>
+
+    <!-- Modal for Adding Custom Tag -->
+    <div id="addTagModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Add Custom Tag</h3>
+            <div class="input-group">
+                <label>Group (Hex, e.g. 0010)</label>
+                <input type="text" id="tagGroup" placeholder="0010" maxlength="4">
+            </div>
+            <div class="input-group">
+                <label>Element (Hex, e.g. 0010)</label>
+                <input type="text" id="tagElement" placeholder="0010" maxlength="4">
+            </div>
+            <div class="input-group">
+                <label>VR (e.g. PN)</label>
+                <select id="tagVR">
+                    <option value="PN">PN (Person Name)</option>
+                    <option value="LO">LO (Long String)</option>
+                    <option value="SH">SH (Short String)</option>
+                    <option value="DA">DA (Date)</option>
+                    <option value="TM">TM (Time)</option>
+                    <option value="UI">UI (Unique Identifier)</option>
+                    <option value="CS">CS (Code String)</option>
+                    <option value="ST">ST (Short Text)</option>
+                    <option value="LT">LT (Long Text)</option>
+                    <option value="UT">UT (Unlimited Text)</option>
+                    <option value="AE">AE (Application Entity)</option>
+                    <option value="AS">AS (Age String)</option>
+                    <option value="DS">DS (Decimal String)</option>
+                    <option value="IS">IS (Integer String)</option>
+                    <option value="FL">FL (Floating Point Single)</option>
+                    <option value="FD">FD (Floating Point Double)</option>
+                    <option value="SS">SS (Signed Short)</option>
+                    <option value="US">US (Unsigned Short)</option>
+                    <option value="SL">SL (Signed Long)</option>
+                    <option value="UL">UL (Unsigned Long)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Value</label>
+                <input type="text" id="tagValue" placeholder="Value">
+            </div>
+            <div class="modal-actions">
+                <button id="cancelTagBtn" class="btn-secondary">Cancel</button>
+                <button id="saveTagBtn" class="btn-primary">Add</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

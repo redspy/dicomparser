@@ -20,6 +20,20 @@ HTML5, CSS, JavaScript를 사용하여 DICOM 파일을 열고, 포함된 모든 
     - Windowing 적용 로직 (VOI LUT - Linear Function) 구현.
     - 슬라이더 이벤트 핸들러 추가하여 실시간 밝기/대비 조절.
 - **[NEW] 자동 로드**: `DOMContentLoaded` 시 `IMG-0002-00001.dcm` 파일을 fetch하여 초기 화면에 표시.
+- **[NEW] 편집 및 저장 기능**: `dcmjs` 라이브러리를 도입하여 태그 수정 및 파일 저장을 지원합니다.
+
+### [Frontend]
+#### [Modify] [index.html](file:///Users/soul/Source/dicomparser/index.html)
+- `dcmjs` 라이브러리 추가.
+- 상단 툴바(Search Box 옆)에 'Add Tag', 'Download DICOM' 버튼 추가.
+- 태그 테이블의 Value 셀을 클릭하면 Input으로 전환되어 수정 가능하게 변경. (Edit Mode)
+- 'Add Tag' 클릭 시 모달 창 표시 (Group, Element, VR, Value 입력).
+
+#### [Modify] [script.js](file:///Users/soul/Source/dicomparser/script.js)
+- `dcmjs`를 이용해 원본 ArrayBuffer를 `DicomMessage` 객체로 파싱하여 관리.
+- **태그 수정**: 테이블에서 값 수정 시 `dataset`의 해당 태그 값 업데이트.
+- **태그 추가**: 입력받은 Group, Element로 태그 키 생성 후 `dataset`에 추가.
+- **다운로드**: 수정된 `dataset`을 `dcmjs.data.datasetToDict` -> `DicomMessage.write` 과정을 거쳐 Blob으로 변환 후 다운로드 트리거.
 
 ### [Frontend]
 #### [NEW] [index.html](file:///Users/soul/Source/dicomparser/index.html)
