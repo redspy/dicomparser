@@ -93,7 +93,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof dcmjs !== 'undefined') {
                 try {
                     // dcmjs는 ArrayBuffer를 입력으로 받습니다.
-                    loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
+                    loadedDicomData = null;
+                    if (typeof dcmjs !== 'undefined') {
+                        try {
+                            loadedDicomData = dcmjs.data.DicomMessage.parse(byteArray.buffer);
+                        } catch (e) {
+                            console.warn('dcmjs parsing failed:', e);
+                        }
+                    }
                     console.log('dcmjs parsing success');
                 } catch (dcmjsError) {
                     console.warn('dcmjs parsing failed (Editing disabled):', dcmjsError);
@@ -634,10 +641,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // tagKey format: '00100010' (no 'x')
         // dcmjs dict structure: dataset.dict['00100010'] = { vr: 'PN', Value: ['Name'] }
 
-        if (!loadedDicomData || !loadedDicomData.dict) return;
+        if (!loadedDicomData || !loadedDicomData.dict) {
+            alert('편집 기능을 사용할 수 없습니다 (데이터 로드 실패).');
+            return;
+        }
 
-        // Ensure key format matches dcmjs expectations
-        const key = tagKey.startsWith('x') ? tagKey.substring(1) : tagKey;
+        // Ensure key format matches dcmjs expectations (Uppercase)
+        let key = tagKey.startsWith('x') ? tagKey.substring(1) : tagKey;
+        key = key.toUpperCase();
 
         if (!loadedDicomData.dict[key]) {
             // Create if not exists (shouldn't happen for edit, only add)
@@ -658,7 +669,10 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`Updated ${key} to ${newValue}`);
 
         // Update allTags array for search consistency
-        const tagIndex = allTags.findIndex(t => t.tag === ('x' + key) || t.tag === key);
+        const tagIndex = allTags.findIndex(t =>
+            t.tag.toLowerCase() === ('x' + key.toLowerCase()) ||
+            t.tag.toUpperCase() === key
+        );
         if (tagIndex !== -1) {
             allTags[tagIndex].value = newValue;
         }
@@ -724,8 +738,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function downloadDicom() {
+        if (typeof dcmjs === 'undefined') {
+            alert('dcmjs 라이브러리가 로드되지 않았습니다.');
+            return;
+        }
+
         if (!loadedDicomData) {
-            alert('No DICOM data loaded.');
+            alert('편집 가능한 DICOM 데이터가 없습니다. (dcmjs 파싱 실패 가능성)');
             return;
         }
 
